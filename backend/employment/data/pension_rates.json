@@ -1,0 +1,20 @@
+{
+  "2025": {
+    "total_rate": 0.09,
+    "employer_rate": 0.045,
+    "employee_rate": 0.045,
+    "note": "2025년 국민연금 보험료율 9%, 사업장가입자 사용자/근로자 각 4.5%"
+  },
+  "2026": {
+    "total_rate": 0.095,
+    "employer_rate": 0.0475,
+    "employee_rate": 0.0475,
+    "note": "2026년 국민연금 보험료율 9.5%, 사업장가입자 사용자/근로자 각 4.75%"
+  },
+  "default": {
+    "total_rate": 0.09,
+    "employer_rate": 0.045,
+    "employee_rate": 0.045,
+    "note": "기본값: 기준연도 미확인 시 국민연금 총 보험료율 9% 적용"
+  }
+}

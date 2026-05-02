@@ -1,0 +1,12 @@
+{
+  "42": {
+    "canonical_code": "51",
+    "canonical_name": "강원특별자치도",
+    "note": "구 강원도 코드"
+  },
+  "45": {
+    "canonical_code": "52",
+    "canonical_name": "전북특별자치도",
+    "note": "구 전라북도 코드"
+  }
+}
