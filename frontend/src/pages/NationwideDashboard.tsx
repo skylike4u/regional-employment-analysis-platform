@@ -28,7 +28,13 @@ function formatIncomeManwon(value: number) {
   return `${formatNumber(Math.round(value / 10000))}만원`;
 }
 
-export default function NationwideDashboard() {
+type NationwideDashboardProps = {
+  onSelectSido: (sidoCode: string) => void;
+};
+
+export default function NationwideDashboard({
+  onSelectSido,
+}: NationwideDashboardProps) {
   const [data, setData] = useState<NationwideSummaryResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -283,7 +289,10 @@ export default function NationwideDashboard() {
               </div>
             </div>
 
-            <NationwideEmploymentMap data={summary} />
+            <NationwideEmploymentMap
+              data={summary}
+              onSelectSido={onSelectSido}
+            />
           </section>
 
           <section style={grid2}>

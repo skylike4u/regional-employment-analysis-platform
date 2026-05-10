@@ -87,3 +87,27 @@ export async function fetchNationwideSigunguRankingReal() {
 
   return response.json();
 }
+
+export async function fetchRegionExplorerReal(params: {
+  sidoCode: string;
+  sigunguCode?: string;
+  legalDongCode?: string;
+  industryName?: string;
+}) {
+  const searchParams = new URLSearchParams();
+
+  searchParams.set("sido_code", params.sidoCode);
+  searchParams.set("sigungu_code", params.sigunguCode ?? "all");
+  searchParams.set("legal_dong_code", params.legalDongCode ?? "all");
+  searchParams.set("industry_name", params.industryName ?? "all");
+
+  const response = await fetch(
+    `http://127.0.0.1:8000/api/employment/region-explorer-real/?${searchParams.toString()}`
+  );
+
+  if (!response.ok) {
+    throw new Error("지역 탐색 API 요청 실패");
+  }
+
+  return response.json();
+}

@@ -571,6 +571,258 @@ def build_legal_dong_top_by_sido(df: pd.DataFrame, top_n=10):
     return results[:top_n]
 
 
+def normalize_code_value(value):
+    if value is None:
+        return ""
+
+    text = str(value).strip()
+
+    if text.endswith(".0"):
+        text = text[:-2]
+
+    return text
+
+
+def filter_region_explorer_df(
+    df: pd.DataFrame,
+    sido_code: str,
+    sigungu_code: str = "all",
+    legal_dong_code: str = "all",
+    industry_name: str = "all",
+):
+    filtered_df = df.copy()
+
+    sido_code = normalize_code_value(sido_code)
+    sigungu_code = normalize_code_value(sigungu_code)
+    legal_dong_code = normalize_code_value(legal_dong_code)
+    industry_name = str(industry_name or "all").strip()
+
+    if "sido_code" in filtered_df.columns:
+        filtered_df["sido_code"] = (
+            filtered_df["sido_code"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+            .str.replace(".0", "", regex=False)
+        )
+        filtered_df = filtered_df[filtered_df["sido_code"] == sido_code]
+
+    if sigungu_code != "all" and "sigungu_code" in filtered_df.columns:
+        filtered_df["sigungu_code"] = (
+            filtered_df["sigungu_code"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+            .str.replace(".0", "", regex=False)
+        )
+
+        # sigungu_code가 26440처럼 full code로 들어온 경우도 대응
+        if len(sigungu_code) >= 5:
+            filtered_df["full_sigungu_code"] = filtered_df["sido_code"].astype(
+                str
+            ) + filtered_df["sigungu_code"].astype(str).str.zfill(3)
+            filtered_df = filtered_df[filtered_df["full_sigungu_code"] == sigungu_code]
+        else:
+            filtered_df = filtered_df[filtered_df["sigungu_code"] == sigungu_code]
+
+    if legal_dong_code != "all" and "legal_dong_code" in filtered_df.columns:
+        filtered_df["legal_dong_code"] = (
+            filtered_df["legal_dong_code"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+            .str.replace(".0", "", regex=False)
+        )
+        filtered_df = filtered_df[filtered_df["legal_dong_code"] == legal_dong_code]
+
+    if industry_name != "all" and "industry_name" in filtered_df.columns:
+        filtered_df["industry_name"] = (
+            filtered_df["industry_name"].fillna("").astype(str).str.strip()
+        )
+        filtered_df = filtered_df[filtered_df["industry_name"] == industry_name]
+
+    return filtered_df
+
+
+def build_scope_summary(df: pd.DataFrame):
+    if df.empty:
+        return {
+            "business_count": 0,
+            "total_workers": 0,
+            "avg_workers": 0,
+            "estimated_avg_annual_income": 0,
+            "applied_pension_rate": 0,
+        }
+
+    business_count = len(df)
+    total_workers = (
+        int(df["subscriber_count"].sum()) if "subscriber_count" in df.columns else 0
+    )
+    avg_workers = (
+        round(float(df["subscriber_count"].mean()), 1) if total_workers > 0 else 0
+    )
+
+    base_month = (
+        df["base_month"].iloc[0] if "base_month" in df.columns and len(df) > 0 else ""
+    )
+
+    rate_info = get_pension_rate_by_base_month(base_month)
+    total_pension_rate = rate_info.get("total_rate", 0)
+
+    total_monthly_pension_amount = (
+        df["monthly_pension_amount"].sum()
+        if "monthly_pension_amount" in df.columns
+        else 0
+    )
+
+    estimated_avg_annual_income = calculate_estimated_avg_annual_income(
+        total_monthly_pension_amount,
+        total_workers,
+        total_pension_rate,
+    )
+
+    return {
+        "business_count": int(business_count),
+        "total_workers": total_workers,
+        "avg_workers": avg_workers,
+        "estimated_avg_annual_income": estimated_avg_annual_income,
+        "applied_pension_rate": total_pension_rate,
+    }
+
+
+def build_sigungu_options(df: pd.DataFrame):
+    if df.empty or "sigungu_code" not in df.columns:
+        return []
+
+    region_codes = load_region_code_map()
+
+    temp_df = df.copy()
+
+    temp_df["sido_code"] = (
+        temp_df["sido_code"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .str.replace(".0", "", regex=False)
+    )
+
+    temp_df["sigungu_code"] = (
+        temp_df["sigungu_code"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .str.replace(".0", "", regex=False)
+    )
+
+    temp_df["full_sigungu_code"] = temp_df["sido_code"] + temp_df[
+        "sigungu_code"
+    ].str.zfill(3)
+
+    grouped = (
+        temp_df.groupby(["sido_code", "sigungu_code", "full_sigungu_code"])
+        .agg(total_workers=("subscriber_count", "sum"))
+        .reset_index()
+        .sort_values("total_workers", ascending=False)
+    )
+
+    results = []
+
+    sigungu_root = region_codes.get("sigungu", {})
+
+    for _, row in grouped.iterrows():
+        sido_code = str(row["sido_code"]).strip()
+        sigungu_code = str(row["sigungu_code"]).strip().zfill(3)
+        full_code = str(row["full_sigungu_code"]).strip()
+
+        sido_block = sigungu_root.get(sido_code, {})
+        codes_map = sido_block.get("codes", {}) if isinstance(sido_block, dict) else {}
+
+        sigungu_name = (
+            codes_map.get(full_code) or codes_map.get(sigungu_code) or full_code
+        )
+
+        results.append(
+            {
+                "code": full_code,
+                "name": sigungu_name,
+                "total_workers": int(row["total_workers"]),
+            }
+        )
+
+    return results
+
+
+def build_legal_dong_options(df: pd.DataFrame):
+    if df.empty or "legal_dong_code" not in df.columns:
+        return []
+
+    legal_dong_map = load_legal_dong_code_map()
+
+    temp_df = df.copy()
+    temp_df["legal_dong_code"] = (
+        temp_df["legal_dong_code"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .str.replace(".0", "", regex=False)
+    )
+    temp_df = temp_df[temp_df["legal_dong_code"] != ""]
+
+    grouped = (
+        temp_df.groupby("legal_dong_code")
+        .agg(total_workers=("subscriber_count", "sum"))
+        .reset_index()
+        .sort_values("total_workers", ascending=False)
+    )
+
+    results = []
+
+    for _, row in grouped.iterrows():
+        code = str(row["legal_dong_code"])
+        full_name = legal_dong_map.get(code, f"미매핑({code})")
+        name = (
+            full_name.split()[-1] if not full_name.startswith("미매핑") else full_name
+        )
+
+        results.append(
+            {
+                "code": code,
+                "name": name,
+                "full_name": full_name,
+                "total_workers": int(row["total_workers"]),
+            }
+        )
+
+    return results
+
+
+def build_industry_options(df: pd.DataFrame):
+    if df.empty or "industry_name" not in df.columns:
+        return []
+
+    temp_df = df.copy()
+    temp_df["industry_name"] = (
+        temp_df["industry_name"].fillna("").astype(str).str.strip()
+    )
+    temp_df = temp_df[temp_df["industry_name"] != ""]
+
+    grouped = (
+        temp_df.groupby("industry_name")
+        .agg(total_workers=("subscriber_count", "sum"))
+        .reset_index()
+        .sort_values("total_workers", ascending=False)
+    )
+
+    return [
+        {
+            "code": row["industry_name"],
+            "name": row["industry_name"],
+            "total_workers": int(row["total_workers"]),
+        }
+        for _, row in grouped.iterrows()
+    ]
+
+
 def build_sido_summary(df: pd.DataFrame, sido_code: str):
     region_codes = load_region_code_map()
     sido_centroids = load_sido_centroid_map()
@@ -1006,6 +1258,115 @@ class UploadPensionCompareView(APIView):
 
         except Exception as e:
             return Response({"error": str(e)}, status=500)
+
+        except Exception as e:
+            return Response(
+                {
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+class RegionExplorerRealView(APIView):
+    def get(self, request):
+        try:
+            sido_code = request.GET.get("sido_code", "26")
+            sigungu_code = request.GET.get("sigungu_code", "all")
+            legal_dong_code = request.GET.get("legal_dong_code", "all")
+            industry_name = request.GET.get("industry_name", "all")
+
+            df, used_encoding = read_pension_file_from_disk(PENSION_SAMPLE_FILE)
+            normalized_df = normalize_pension_dataframe(df)
+
+            region_codes = load_region_code_map()
+
+            # 1. 시도 기준 원본
+            sido_df = filter_region_explorer_df(
+                df=normalized_df,
+                sido_code=sido_code,
+                sigungu_code="all",
+                legal_dong_code="all",
+                industry_name="all",
+            )
+
+            # 2. 선택 범위 기준 필터링
+            scoped_df = filter_region_explorer_df(
+                df=normalized_df,
+                sido_code=sido_code,
+                sigungu_code=sigungu_code,
+                legal_dong_code=legal_dong_code,
+                industry_name=industry_name,
+            )
+
+            scope_summary = build_scope_summary(scoped_df)
+
+            # 시도 기준 시군구 옵션
+            sigungu_options = build_sigungu_options(sido_df)
+
+            # 시군구 선택 시 해당 시군구 안의 법정동 옵션
+            legal_base_df = filter_region_explorer_df(
+                df=normalized_df,
+                sido_code=sido_code,
+                sigungu_code=sigungu_code,
+                legal_dong_code="all",
+                industry_name="all",
+            )
+            legal_dong_options = build_legal_dong_options(legal_base_df)
+
+            # 선택 범위 안의 업종 옵션
+            industry_base_df = filter_region_explorer_df(
+                df=normalized_df,
+                sido_code=sido_code,
+                sigungu_code=sigungu_code,
+                legal_dong_code=legal_dong_code,
+                industry_name="all",
+            )
+            industry_options = build_industry_options(industry_base_df)
+
+            # 요약 데이터
+            region_summary = build_region_summary(scoped_df)
+            legal_dong_top10 = build_legal_dong_top_by_sido(legal_base_df, top_n=10)
+            industry_top10 = build_industry_top_by_sido(scoped_df, top_n=10)
+            company_top20 = build_company_top_by_sido(
+                scoped_df, top_n=20, min_subscribers=10
+            )
+
+            return Response(
+                {
+                    "message": "지역 탐색 데이터 조회 성공",
+                    "encoding": used_encoding,
+                    "sido_code": str(sido_code),
+                    "sido_name": region_codes.get("sido", {}).get(str(sido_code), ""),
+                    "filters": {
+                        "sigungu_code": sigungu_code,
+                        "legal_dong_code": legal_dong_code,
+                        "industry_name": industry_name,
+                    },
+                    "row_count": int(len(scoped_df)),
+                    "scope_summary": scope_summary,
+                    "sigungu_options": sigungu_options,
+                    "legal_dong_options": legal_dong_options,
+                    "industry_options": industry_options,
+                    "region_summary": region_summary,
+                    "legal_dong_top10": legal_dong_top10,
+                    "industry_top10": industry_top10,
+                    "company_top20": company_top20,
+                    "source_file": str(PENSION_SAMPLE_FILE.name),
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        except Exception as e:
+            traceback.print_exc()
+            return Response(
+                {
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
 
 class SeoulBusanCompareSampleView(APIView):

@@ -11,6 +11,7 @@ from .views import (
     IndustrySummaryRealView,
     IndustryCompareRealView,
     NationwideSigunguRankingRealView,
+    RegionExplorerRealView,
 )
 
 urlpatterns = [
@@ -28,5 +29,10 @@ urlpatterns = [
         "nationwide-sigungu-ranking-real/",
         NationwideSigunguRankingRealView.as_view(),
         name="nationwide-sigungu-ranking-real",
+    ),
+    path(
+        "region-explorer-real/",
+        RegionExplorerRealView.as_view(),
+        name="region-explorer-real",
     ),
 ]

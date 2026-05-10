@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { fetchRegionSummaryReal } from "../api/workers";
+import { useEffect, useMemo, useState } from "react";
+import { fetchRegionExplorerReal } from "../api/workers";
 import { REGION_OPTIONS } from "../constants/regions";
 import { formatNumber } from "../utils/format";
 import RegionBarChart from "../components/charts/RegionBarChart";
@@ -62,12 +62,95 @@ function shortText(value: string, maxLength = 24) {
   return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
 }
 
-export default function BusanDashboard() {
-  const [draftSidoCode, setDraftSidoCode] = useState("26");
+type BusanDashboardProps = {
+  initialSidoCode?: string;
+  shouldAutoLoad?: boolean;
+  onAutoLoadDone?: () => void;
+};
+
+export default function BusanDashboard({
+  initialSidoCode = "26",
+  shouldAutoLoad = false,
+  onAutoLoadDone,
+}: BusanDashboardProps) {
+  const [draftSidoCode, setDraftSidoCode] = useState(initialSidoCode);
   const [data, setData] = useState<RegionSummaryResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [hasSearched, setHasSearched] = useState(false);
+  const [selectedSigunguCode, setSelectedSigunguCode] = useState("all");
+  const [selectedLegalDongCode, setSelectedLegalDongCode] = useState("all");
+  const [selectedIndustryName, setSelectedIndustryName] = useState("all");
+  const [optionData, setOptionData] = useState<RegionSummaryResponse | null>(
+    null
+  );
+  const [optionLoading, setOptionLoading] = useState(false);
+
+  useEffect(() => {
+    async function initializeRegionOptions() {
+      try {
+        setDraftSidoCode(initialSidoCode);
+        setSelectedSigunguCode("all");
+        setSelectedLegalDongCode("all");
+        setSelectedIndustryName("all");
+
+        setOptionLoading(true);
+
+        const result = await fetchRegionExplorerReal({
+          sidoCode: initialSidoCode,
+          sigunguCode: "all",
+          legalDongCode: "all",
+          industryName: "all",
+        });
+
+        setOptionData(result as RegionSummaryResponse);
+
+        if (shouldAutoLoad) {
+          setLoading(true);
+          setErrorMessage("");
+          setHasSearched(true);
+          setData(result as RegionSummaryResponse);
+        } else {
+          setData(null);
+          setErrorMessage("");
+          setHasSearched(false);
+        }
+      } catch (error) {
+        console.error(error);
+        setErrorMessage("지역 상세 API 연결에 실패했습니다.");
+      } finally {
+        setLoading(false);
+        setOptionLoading(false);
+        onAutoLoadDone?.();
+      }
+    }
+
+    initializeRegionOptions();
+  }, [initialSidoCode]);
+
+  async function loadOptionData(params: {
+    sidoCode: string;
+    sigunguCode?: string;
+    legalDongCode?: string;
+    industryName?: string;
+  }) {
+    try {
+      setOptionLoading(true);
+
+      const result = await fetchRegionExplorerReal({
+        sidoCode: params.sidoCode,
+        sigunguCode: params.sigunguCode ?? "all",
+        legalDongCode: params.legalDongCode ?? "all",
+        industryName: params.industryName ?? "all",
+      });
+
+      setOptionData(result as RegionSummaryResponse);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setOptionLoading(false);
+    }
+  }
 
   async function handleSearch() {
     try {
@@ -75,8 +158,17 @@ export default function BusanDashboard() {
       setErrorMessage("");
       setHasSearched(true);
 
-      const result = await fetchRegionSummaryReal(draftSidoCode);
-      setData(result as RegionSummaryResponse);
+      const result = await fetchRegionExplorerReal({
+        sidoCode: draftSidoCode,
+        sigunguCode: selectedSigunguCode,
+        legalDongCode: selectedLegalDongCode,
+        industryName: selectedIndustryName,
+      });
+
+      const nextData = result as RegionSummaryResponse;
+
+      setData(nextData);
+      setOptionData(nextData);
     } catch (error) {
       console.error(error);
       setErrorMessage("지역 상세 API 연결에 실패했습니다.");
@@ -89,33 +181,65 @@ export default function BusanDashboard() {
     REGION_OPTIONS.find((region) => region.code === draftSidoCode)?.name ??
     "선택 지역";
 
-  const totalBusinesses = useMemo(() => {
-    return (
-      data?.region_summary.reduce(
-        (sum, item) => sum + item.business_count,
-        0
-      ) ?? 0
-    );
-  }, [data]);
+  const totalWorkers = data?.scope_summary?.total_workers ?? 0;
+  const totalBusinesses = data?.scope_summary?.business_count ?? 0;
+  const avgWorkers = data?.scope_summary?.avg_workers ?? 0;
+  const estimatedAvgIncome =
+    data?.scope_summary?.estimated_avg_annual_income ?? 0;
 
-  const totalWorkers = useMemo(() => {
-    return (
-      data?.region_summary.reduce((sum, item) => sum + item.total_workers, 0) ??
-      0
-    );
-  }, [data]);
+  const sigunguOptions = useMemo(() => {
+    if (!optionData?.sigungu_options) return [];
 
-  const weightedAvgIncome = useMemo(() => {
-    if (!data || totalWorkers <= 0) return 0;
+    return optionData.sigungu_options.map((item) => ({
+      code: item.code,
+      name: item.name,
+    }));
+  }, [optionData]);
 
-    const totalEstimatedIncome = data.region_summary.reduce(
-      (sum, item) =>
-        sum + item.estimated_avg_annual_income * item.total_workers,
-      0
-    );
+  const legalDongOptions = useMemo(() => {
+    if (!optionData?.legal_dong_options) return [];
 
-    return Math.round(totalEstimatedIncome / totalWorkers);
-  }, [data, totalWorkers]);
+    return optionData.legal_dong_options.map((item) => ({
+      code: item.code,
+      name: item.name,
+      fullName: item.full_name,
+    }));
+  }, [optionData]);
+
+  const industryOptions = useMemo(() => {
+    if (!optionData?.industry_options) return [];
+
+    return optionData.industry_options.map((item) => ({
+      code: item.code,
+      name: item.name,
+    }));
+  }, [optionData]);
+
+  const selectedSigunguName =
+    sigunguOptions.find((item) => item.code === selectedSigunguCode)?.name ??
+    "";
+
+  const selectedLegalDongName =
+    legalDongOptions.find((item) => item.code === selectedLegalDongCode)
+      ?.name ?? "";
+
+  const selectedIndustryLabel =
+    selectedIndustryName !== "all" ? selectedIndustryName : "";
+
+  const currentScopeLabel = [
+    selectedRegionName,
+    selectedSigunguCode !== "all" ? selectedSigunguName : "",
+    selectedLegalDongCode !== "all" ? selectedLegalDongName : "",
+    selectedIndustryLabel,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const isSigunguScope = selectedSigunguCode !== "all";
+  const isLegalDongScope = selectedLegalDongCode !== "all";
+  const isIndustryScope = selectedIndustryName !== "all";
+
+  const scopeAvgIncome = estimatedAvgIncome;
 
   const topWorkerRegion = data?.region_summary[0];
 
@@ -165,15 +289,21 @@ export default function BusanDashboard() {
       )[0];
   }, [data]);
 
-  const top3WorkerShare = useMemo(() => {
+  const spatialTop3WorkerShare = useMemo(() => {
     if (!data || totalWorkers <= 0) return 0;
 
-    const top3Workers = data.region_summary
+    const isSigunguSelected = selectedSigunguCode !== "all";
+
+    const sourceItems = isSigunguSelected
+      ? data.legal_dong_top10
+      : data.region_summary;
+
+    const top3Workers = sourceItems
       .slice(0, 3)
       .reduce((sum, item) => sum + item.total_workers, 0);
 
     return (top3Workers / totalWorkers) * 100;
-  }, [data, totalWorkers]);
+  }, [data, totalWorkers, selectedSigunguCode]);
 
   const top3IndustryWorkerShare = useMemo(() => {
     if (!data?.industry_top10 || totalWorkers <= 0) return 0;
@@ -297,19 +427,116 @@ export default function BusanDashboard() {
       </header>
 
       <section style={filterBox}>
-        <div>
-          <label style={labelStyle}>분석 지역 선택</label>
-          <select
-            value={draftSidoCode}
-            onChange={(e) => setDraftSidoCode(e.target.value)}
-            style={selectStyle}
-          >
-            {REGION_OPTIONS.map((region) => (
-              <option key={region.code} value={region.code}>
-                {region.name}
-              </option>
-            ))}
-          </select>
+        <div style={filterGrid}>
+          <div>
+            <label style={labelStyle}>시도</label>
+            <select
+              value={draftSidoCode}
+              onChange={(e) => {
+                const nextSidoCode = e.target.value;
+
+                setDraftSidoCode(nextSidoCode);
+                setSelectedSigunguCode("all");
+                setSelectedLegalDongCode("all");
+                setSelectedIndustryName("all");
+
+                setData(null);
+                setOptionData(null);
+                setErrorMessage("");
+                setHasSearched(false);
+
+                loadOptionData({
+                  sidoCode: nextSidoCode,
+                  sigunguCode: "all",
+                  legalDongCode: "all",
+                  industryName: "all",
+                });
+              }}
+              style={selectStyle}
+            >
+              {REGION_OPTIONS.map((region) => (
+                <option key={region.code} value={region.code}>
+                  {region.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label style={labelStyle}>시군구</label>
+            <select
+              value={selectedSigunguCode}
+              onChange={(e) => {
+                const nextSigunguCode = e.target.value;
+
+                setSelectedSigunguCode(nextSigunguCode);
+                setSelectedLegalDongCode("all");
+                setSelectedIndustryName("all");
+
+                loadOptionData({
+                  sidoCode: draftSidoCode,
+                  sigunguCode: nextSigunguCode,
+                  legalDongCode: "all",
+                  industryName: "all",
+                });
+              }}
+              style={selectStyle}
+              disabled={!optionData}
+            >
+              <option value="all">전체</option>
+              {sigunguOptions.map((item) => (
+                <option key={item.code} value={item.code}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label style={labelStyle}>법정동</label>
+            <select
+              value={selectedLegalDongCode}
+              onChange={(e) => {
+                const nextLegalDongCode = e.target.value;
+
+                setSelectedLegalDongCode(nextLegalDongCode);
+                setSelectedIndustryName("all");
+
+                loadOptionData({
+                  sidoCode: draftSidoCode,
+                  sigunguCode: selectedSigunguCode,
+                  legalDongCode: nextLegalDongCode,
+                  industryName: "all",
+                });
+              }}
+              style={selectStyle}
+              disabled={!optionData || selectedSigunguCode === "all"}
+            >
+              <option value="all">전체</option>
+              {legalDongOptions.map((item) => (
+                <option key={item.code} value={item.code}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label style={labelStyle}>업종</label>
+            <select
+              value={selectedIndustryName}
+              onChange={(e) => setSelectedIndustryName(e.target.value)}
+              style={selectStyle}
+              disabled={!optionData}
+            >
+              <option value="all">전체</option>
+              {industryOptions.map((item) => (
+                <option key={item.code} value={item.code}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <button
@@ -351,9 +578,23 @@ export default function BusanDashboard() {
 
       {!loading && !errorMessage && data && (
         <>
-          <section style={grid5}>
-            <InfoCard label="분석 지역" value={data.sido_name} />
-            <InfoCard label="시군구 수" value={data.region_summary.length} />
+          <section style={isLegalDongScope ? grid4 : grid5}>
+            <InfoCard
+              label="분석 지역"
+              value={currentScopeLabel || data.sido_name}
+            />
+
+            {!isLegalDongScope && (
+              <InfoCard
+                label={isSigunguScope ? "법정동 수" : "시군구 수"}
+                value={
+                  isSigunguScope
+                    ? data.legal_dong_top10.length
+                    : data.region_summary.length
+                }
+              />
+            )}
+
             <InfoCard
               label="총 사업장 수"
               value={formatNumber(totalBusinesses)}
@@ -361,29 +602,33 @@ export default function BusanDashboard() {
             <InfoCard label="총 가입자 수" value={formatNumber(totalWorkers)} />
             <InfoCard
               label="추정 평균연소득"
-              value={formatIncomeManwon(weightedAvgIncome)}
+              value={formatIncomeManwon(scopeAvgIncome)}
             />
           </section>
 
           <section style={grid4}>
-            <InfoCard
-              label="가입자 수 1위 지역"
-              value={topWorkerRegion?.sigungu_name ?? "-"}
-              subText={
-                topWorkerRegion
-                  ? `${formatNumber(topWorkerRegion.total_workers)}명`
-                  : "-"
-              }
-            />
-            <InfoCard
-              label="가입자 수 1위 법정동"
-              value={topLegalDongByWorkers?.legal_dong_name ?? "-"}
-              subText={
-                topLegalDongByWorkers
-                  ? `${formatNumber(topLegalDongByWorkers.total_workers)}명`
-                  : "-"
-              }
-            />
+            {!isLegalDongScope && (
+              <InfoCard
+                label={
+                  isSigunguScope ? "가입자 수 1위 법정동" : "가입자 수 1위 지역"
+                }
+                value={
+                  isSigunguScope
+                    ? topLegalDongByWorkers?.legal_dong_name ?? "-"
+                    : topWorkerRegion?.sigungu_name ?? "-"
+                }
+                subText={
+                  isSigunguScope
+                    ? topLegalDongByWorkers
+                      ? `${formatNumber(topLegalDongByWorkers.total_workers)}명`
+                      : "-"
+                    : topWorkerRegion
+                    ? `${formatNumber(topWorkerRegion.total_workers)}명`
+                    : "-"
+                }
+              />
+            )}
+
             <InfoCard
               label="가입자 수 1위 업종"
               value={topIndustryByWorkers?.industry_name ?? "-"}
@@ -393,6 +638,7 @@ export default function BusanDashboard() {
                   : "-"
               }
             />
+
             <InfoCard
               label="대표 기업"
               value={topCompanyByWorkers?.company_name ?? "-"}
@@ -402,31 +648,39 @@ export default function BusanDashboard() {
                   : "-"
               }
             />
+
+            <InfoCard label="정책 해석 축" value="지역 × 동 × 업종 × 기업" />
           </section>
 
-          <section style={grid4}>
-            <InfoCard
-              label="추정 평균연소득 1위 지역"
-              value={topIncomeRegion?.sigungu_name ?? "-"}
-              subText={
-                topIncomeRegion
-                  ? formatIncomeManwon(
-                      topIncomeRegion.estimated_avg_annual_income
-                    )
-                  : "-"
-              }
-            />
-            <InfoCard
-              label="고연소득 법정동"
-              value={topLegalDongByIncome?.legal_dong_name ?? "-"}
-              subText={
-                topLegalDongByIncome
-                  ? formatIncomeManwon(
-                      topLegalDongByIncome.estimated_avg_annual_income
-                    )
-                  : "-"
-              }
-            />
+          <section style={isLegalDongScope ? grid2 : grid4}>
+            {!isLegalDongScope && (
+              <>
+                <InfoCard
+                  label="추정 평균연소득 1위 지역"
+                  value={topIncomeRegion?.sigungu_name ?? "-"}
+                  subText={
+                    topIncomeRegion
+                      ? formatIncomeManwon(
+                          topIncomeRegion.estimated_avg_annual_income
+                        )
+                      : "-"
+                  }
+                />
+
+                <InfoCard
+                  label="고연소득 법정동"
+                  value={topLegalDongByIncome?.legal_dong_name ?? "-"}
+                  subText={
+                    topLegalDongByIncome
+                      ? formatIncomeManwon(
+                          topLegalDongByIncome.estimated_avg_annual_income
+                        )
+                      : "-"
+                  }
+                />
+              </>
+            )}
+
             <InfoCard
               label="고연소득 업종"
               value={topIndustryByIncome?.industry_name ?? "-"}
@@ -438,6 +692,7 @@ export default function BusanDashboard() {
                   : "-"
               }
             />
+
             <InfoCard
               label="고연소득 대표 기업"
               value={topCompanyByIncome?.company_name ?? "-"}
@@ -451,24 +706,30 @@ export default function BusanDashboard() {
             />
           </section>
 
-          <section style={grid4}>
-            <InfoCard
-              label="상위 3개 지역 가입자 비중"
-              value={`${top3WorkerShare.toFixed(1)}%`}
-              subText="공간 집중도"
-            />
-            <InfoCard
-              label="상위 3개 업종 가입자 비중"
-              value={`${top3IndustryWorkerShare.toFixed(1)}%`}
-              subText="산업 집중도"
-            />
-            <InfoCard
-              label="상위 3개 법정동 가입자 비중"
-              value={`${top3LegalDongWorkerShare.toFixed(1)}%`}
-              subText="동 단위 집중도"
-            />
-            <InfoCard label="정책 해석 축" value="지역 × 동 × 업종 × 기업" />
-          </section>
+          {!isLegalDongScope && (
+            <section style={grid4}>
+              <InfoCard
+                label="상위 3개 공간 가입자 비중"
+                value={`${spatialTop3WorkerShare.toFixed(1)}%`}
+                subText={
+                  selectedSigunguCode === "all"
+                    ? "시군구 집중도"
+                    : "법정동 집중도"
+                }
+              />
+              <InfoCard
+                label="상위 3개 업종 가입자 비중"
+                value={`${top3IndustryWorkerShare.toFixed(1)}%`}
+                subText="산업 집중도"
+              />
+              <InfoCard
+                label="상위 3개 법정동 가입자 비중"
+                value={`${top3LegalDongWorkerShare.toFixed(1)}%`}
+                subText="동 단위 집중도"
+              />
+              <InfoCard label="정책 해석 축" value="지역 × 동 × 업종 × 기업" />
+            </section>
+          )}
 
           <section style={grid2}>
             <div style={cardStyle}>
@@ -486,101 +747,143 @@ export default function BusanDashboard() {
               </div>
             </div>
           </section>
+          {isLegalDongScope && (
+            <section style={grid1}>
+              <div style={cardStyle}>
+                <div style={labelStyle}>법정동 단위 해석</div>
+                <div style={{ color: "#334155", lineHeight: 1.7 }}>
+                  <strong>{currentScopeLabel}</strong>은 단일 법정동 기준으로
+                  조회된 결과입니다. 따라서 법정동 간 순위보다는 해당 동 내부의
+                  <strong>
+                    {" "}
+                    업종 구조, 대표 기업, 고용 규모, 추정 평균연소득
+                  </strong>
+                  을 중심으로 해석하는 것이 적절합니다.
+                </div>
+              </div>
+            </section>
+          )}
+
+          {!isSigunguScope && (
+            <>
+              <section style={grid2}>
+                <RegionBarChart
+                  title={`${
+                    currentScopeLabel || data.sido_name
+                  } 시군구별 가입자 수`}
+                  data={workerChartData}
+                  dataKey="workerCount"
+                  barColor="#2563eb"
+                />
+                <RegionBarChart
+                  title={`${
+                    currentScopeLabel || data.sido_name
+                  } 시군구별 사업장 수`}
+                  data={businessChartData}
+                  dataKey="businessCount"
+                  barColor="#0f766e"
+                />
+              </section>
+
+              <section style={grid1}>
+                <RegionBarChart
+                  title={`${
+                    currentScopeLabel || data.sido_name
+                  } 시군구별 추정 평균연소득(만원)`}
+                  data={incomeChartData}
+                  dataKey="income"
+                  barColor="#7c3aed"
+                />
+              </section>
+            </>
+          )}
+
+          {!isLegalDongScope && (
+            <section style={grid2}>
+              <RegionBarChart
+                title={`${
+                  currentScopeLabel || data.sido_name
+                } 법정동별 가입자 수 TOP10`}
+                data={legalDongWorkerChartData}
+                dataKey="workerCount"
+                barColor="#2563eb"
+              />
+              <RegionBarChart
+                title={`${
+                  currentScopeLabel || data.sido_name
+                } 법정동별 추정 평균연소득 TOP10(만원)`}
+                data={legalDongIncomeChartData}
+                dataKey="income"
+                barColor="#7c3aed"
+              />
+            </section>
+          )}
 
           <section style={grid2}>
             <RegionBarChart
-              title={`${data.sido_name} 시군구별 가입자 수`}
-              data={workerChartData}
-              dataKey="workerCount"
-              barColor="#2563eb"
-            />
-            <RegionBarChart
-              title={`${data.sido_name} 시군구별 사업장 수`}
-              data={businessChartData}
-              dataKey="businessCount"
-              barColor="#0f766e"
-            />
-          </section>
-
-          <section style={grid1}>
-            <RegionBarChart
-              title={`${data.sido_name} 시군구별 추정 평균연소득(만원)`}
-              data={incomeChartData}
-              dataKey="income"
-              barColor="#7c3aed"
-            />
-          </section>
-
-          <section style={grid2}>
-            <RegionBarChart
-              title={`${data.sido_name} 법정동별 가입자 수 TOP10`}
-              data={legalDongWorkerChartData}
-              dataKey="workerCount"
-              barColor="#2563eb"
-            />
-            <RegionBarChart
-              title={`${data.sido_name} 법정동별 추정 평균연소득 TOP10(만원)`}
-              data={legalDongIncomeChartData}
-              dataKey="income"
-              barColor="#7c3aed"
-            />
-          </section>
-
-          <section style={grid2}>
-            <RegionBarChart
-              title={`${data.sido_name} 업종별 가입자 수 TOP10`}
+              title={`${
+                currentScopeLabel || data.sido_name
+              } 업종별 가입자 수 TOP10`}
               data={industryWorkerChartData}
               dataKey="workerCount"
               barColor="#2563eb"
             />
             <RegionBarChart
-              title={`${data.sido_name} 업종별 추정 평균연소득 TOP10(만원)`}
+              title={`${
+                currentScopeLabel || data.sido_name
+              } 업종별 추정 평균연소득 TOP10(만원)`}
               data={industryIncomeChartData}
               dataKey="income"
               barColor="#7c3aed"
             />
           </section>
 
-          <section style={tableCard}>
-            <h2 style={sectionTitle}>{data.sido_name} 법정동 TOP10</h2>
-            <table style={tableStyle}>
-              <thead>
-                <tr>
-                  <th style={thStyle}>순위</th>
-                  <th style={thStyle}>법정동</th>
-                  <th style={thStyle}>전체 지역명</th>
-                  <th style={thStyleRight}>사업장 수</th>
-                  <th style={thStyleRight}>총 가입자 수</th>
-                  <th style={thStyleRight}>사업장당 평균 가입자 수</th>
-                  <th style={thStyleRight}>추정 평균연소득</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.legal_dong_top10?.map((item, index) => (
-                  <tr key={item.legal_dong_code}>
-                    <td style={tdStyle}>{index + 1}</td>
-                    <td style={tdStyle}>{item.legal_dong_name}</td>
-                    <td style={tdStyle}>{item.legal_dong_full_name}</td>
-                    <td style={tdStyleRight}>
-                      {formatNumber(item.business_count)}
-                    </td>
-                    <td style={tdStyleRight}>
-                      {formatNumber(item.total_workers)}
-                    </td>
-                    <td style={tdStyleRight}>
-                      {formatNumber(item.avg_workers)}
-                    </td>
-                    <td style={tdStyleRight}>
-                      {formatIncomeManwon(item.estimated_avg_annual_income)}
-                    </td>
+          {!isLegalDongScope && (
+            <section style={tableCard}>
+              <h2 style={sectionTitle}>
+                {currentScopeLabel || data.sido_name} 법정동 TOP10
+              </h2>
+              <table style={tableStyle}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>순위</th>
+                    <th style={thStyle}>법정동</th>
+                    <th style={thStyle}>전체 지역명</th>
+                    <th style={thStyleRight}>사업장 수</th>
+                    <th style={thStyleRight}>총 가입자 수</th>
+                    <th style={thStyleRight}>사업장당 평균 가입자 수</th>
+                    <th style={thStyleRight}>추정 평균연소득</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
+                </thead>
+                <tbody>
+                  {data.legal_dong_top10?.map((item, index) => (
+                    <tr key={item.legal_dong_code}>
+                      <td style={tdStyle}>{index + 1}</td>
+                      <td style={tdStyle}>{item.legal_dong_name}</td>
+                      <td style={tdStyle}>{item.legal_dong_full_name}</td>
+                      <td style={tdStyleRight}>
+                        {formatNumber(item.business_count)}
+                      </td>
+                      <td style={tdStyleRight}>
+                        {formatNumber(item.total_workers)}
+                      </td>
+                      <td style={tdStyleRight}>
+                        {formatNumber(item.avg_workers)}
+                      </td>
+                      <td style={tdStyleRight}>
+                        {formatIncomeManwon(item.estimated_avg_annual_income)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+          )}
 
           <section style={tableCard}>
-            <h2 style={sectionTitle}>{data.sido_name} 대표 기업 TOP20</h2>
+            <h2 style={sectionTitle}>
+              {currentScopeLabel || data.sido_name} 대표 기업 TOP20
+            </h2>
             <table style={tableStyle}>
               <thead>
                 <tr>
@@ -618,7 +921,9 @@ export default function BusanDashboard() {
           </section>
 
           <section style={tableCard}>
-            <h2 style={sectionTitle}>{data.sido_name} 업종 TOP10</h2>
+            <h2 style={sectionTitle}>
+              {currentScopeLabel || data.sido_name} 업종 TOP10
+            </h2>
             <table style={tableStyle}>
               <thead>
                 <tr>
@@ -652,71 +957,74 @@ export default function BusanDashboard() {
               </tbody>
             </table>
           </section>
+          {!isSigunguScope && (
+            <section style={tableCard}>
+              <h2 style={sectionTitle}>{data.sido_name} 시군구 상세 테이블</h2>
+              <table style={tableStyle}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>순위</th>
+                    <th style={thStyle}>지역</th>
+                    <th style={thStyleRight}>사업장 수</th>
+                    <th style={thStyleRight}>사업장 비중(%)</th>
+                    <th style={thStyleRight}>총 가입자 수</th>
+                    <th style={thStyleRight}>가입자 비중(%)</th>
+                    <th style={thStyleRight}>고용-사업장 비중 차이</th>
+                    <th style={thStyleRight}>사업장당 평균 가입자 수</th>
+                    <th style={thStyleRight}>추정 평균연소득</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.region_summary.map((item, index) => {
+                    const businessShare =
+                      totalBusinesses > 0
+                        ? (item.business_count / totalBusinesses) * 100
+                        : 0;
 
-          <section style={tableCard}>
-            <h2 style={sectionTitle}>{data.sido_name} 시군구 상세 테이블</h2>
-            <table style={tableStyle}>
-              <thead>
-                <tr>
-                  <th style={thStyle}>순위</th>
-                  <th style={thStyle}>지역</th>
-                  <th style={thStyleRight}>사업장 수</th>
-                  <th style={thStyleRight}>사업장 비중(%)</th>
-                  <th style={thStyleRight}>총 가입자 수</th>
-                  <th style={thStyleRight}>가입자 비중(%)</th>
-                  <th style={thStyleRight}>고용-사업장 비중 차이</th>
-                  <th style={thStyleRight}>사업장당 평균 가입자 수</th>
-                  <th style={thStyleRight}>추정 평균연소득</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.region_summary.map((item, index) => {
-                  const businessShare =
-                    totalBusinesses > 0
-                      ? (item.business_count / totalBusinesses) * 100
-                      : 0;
+                    const workerShare =
+                      totalWorkers > 0
+                        ? (item.total_workers / totalWorkers) * 100
+                        : 0;
 
-                  const workerShare =
-                    totalWorkers > 0
-                      ? (item.total_workers / totalWorkers) * 100
-                      : 0;
+                    const shareGap = workerShare - businessShare;
 
-                  const shareGap = workerShare - businessShare;
-
-                  return (
-                    <tr key={item.region_key}>
-                      <td style={tdStyle}>{index + 1}</td>
-                      <td style={tdStyle}>{item.full_region_name}</td>
-                      <td style={tdStyleRight}>
-                        {formatNumber(item.business_count)}
-                      </td>
-                      <td style={tdStyleRight}>{businessShare.toFixed(1)}%</td>
-                      <td style={tdStyleRight}>
-                        {formatNumber(item.total_workers)}
-                      </td>
-                      <td style={tdStyleRight}>{workerShare.toFixed(1)}%</td>
-                      <td
-                        style={{
-                          ...tdStyleRight,
-                          color: shareGap >= 0 ? "#2563eb" : "#dc2626",
-                          fontWeight: 700,
-                        }}
-                      >
-                        {shareGap >= 0 ? "+" : ""}
-                        {shareGap.toFixed(1)}%p
-                      </td>
-                      <td style={tdStyleRight}>
-                        {formatNumber(item.avg_workers)}
-                      </td>
-                      <td style={tdStyleRight}>
-                        {formatIncomeManwon(item.estimated_avg_annual_income)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </section>
+                    return (
+                      <tr key={item.region_key}>
+                        <td style={tdStyle}>{index + 1}</td>
+                        <td style={tdStyle}>{item.full_region_name}</td>
+                        <td style={tdStyleRight}>
+                          {formatNumber(item.business_count)}
+                        </td>
+                        <td style={tdStyleRight}>
+                          {businessShare.toFixed(1)}%
+                        </td>
+                        <td style={tdStyleRight}>
+                          {formatNumber(item.total_workers)}
+                        </td>
+                        <td style={tdStyleRight}>{workerShare.toFixed(1)}%</td>
+                        <td
+                          style={{
+                            ...tdStyleRight,
+                            color: shareGap >= 0 ? "#2563eb" : "#dc2626",
+                            fontWeight: 700,
+                          }}
+                        >
+                          {shareGap >= 0 ? "+" : ""}
+                          {shareGap.toFixed(1)}%p
+                        </td>
+                        <td style={tdStyleRight}>
+                          {formatNumber(item.avg_workers)}
+                        </td>
+                        <td style={tdStyleRight}>
+                          {formatIncomeManwon(item.estimated_avg_annual_income)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </section>
+          )}
         </>
       )}
     </div>
@@ -767,6 +1075,14 @@ const filterBox: React.CSSProperties = {
   flexWrap: "wrap",
 };
 
+const filterGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+  gap: "12px",
+  flex: 1,
+  minWidth: 0,
+};
+
 const emptyBox: React.CSSProperties = {
   padding: "28px",
   border: "1px dashed #cbd5e1",
@@ -778,10 +1094,10 @@ const emptyBox: React.CSSProperties = {
 };
 
 const selectStyle: React.CSSProperties = {
+  width: "100%",
   padding: "10px 12px",
   borderRadius: "10px",
   border: "1px solid #cbd5e1",
-  minWidth: "240px",
   fontSize: "15px",
   background: "#ffffff",
 };

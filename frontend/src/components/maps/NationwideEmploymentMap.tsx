@@ -1,10 +1,4 @@
-import {
-  CircleMarker,
-  MapContainer,
-  Popup,
-  TileLayer,
-  Tooltip,
-} from "react-leaflet";
+import { CircleMarker, MapContainer, TileLayer, Tooltip } from "react-leaflet";
 import type { LatLngExpression } from "leaflet";
 import { formatNumber } from "../../utils/format";
 
@@ -21,6 +15,7 @@ type SidoMapItem = {
 
 type NationwideEmploymentMapProps = {
   data: SidoMapItem[];
+  onSelectSido: (sidoCode: string) => void;
 };
 
 function formatIncomeManwon(value: number) {
@@ -49,6 +44,7 @@ function getIncomeColor(income: number) {
 
 export default function NationwideEmploymentMap({
   data,
+  onSelectSido,
 }: NationwideEmploymentMapProps) {
   const center: LatLngExpression = [36.2, 127.8];
 
@@ -68,6 +64,18 @@ export default function NationwideEmploymentMap({
       .sort(
         (a, b) => b.estimated_avg_annual_income - a.estimated_avg_annual_income
       )
+      .map((item, index) => [item.sido_code, index + 1])
+  );
+
+  const businessRankMap = new Map(
+    [...validData]
+      .sort((a, b) => b.business_count - a.business_count)
+      .map((item, index) => [item.sido_code, index + 1])
+  );
+
+  const avgWorkersRankMap = new Map(
+    [...validData]
+      .sort((a, b) => b.avg_workers - a.avg_workers)
       .map((item, index) => [item.sido_code, index + 1])
   );
 
@@ -103,8 +111,6 @@ export default function NationwideEmploymentMap({
 
         {validData.map((item) => {
           const color = getIncomeColor(item.estimated_avg_annual_income);
-          const workerRank = workerRankMap.get(item.sido_code);
-          const incomeRank = incomeRankMap.get(item.sido_code);
 
           return (
             <CircleMarker
@@ -114,50 +120,40 @@ export default function NationwideEmploymentMap({
               pathOptions={{
                 color,
                 fillColor: color,
-                fillOpacity: 0.58,
+                fillOpacity: 0.6,
                 weight: 2,
               }}
+              eventHandlers={{
+                click: () => onSelectSido(item.sido_code),
+              }}
             >
-              <Tooltip direction="top" offset={[0, -8]} opacity={0.95}>
-                <div style={{ minWidth: "160px", lineHeight: 1.6 }}>
-                  <strong>{item.sido_name}</strong>
+              <Tooltip direction="top" offset={[0, -8]} opacity={0.96}>
+                <div style={{ minWidth: "210px", lineHeight: 1.65 }}>
+                  <strong style={{ fontSize: "15px" }}>{item.sido_name}</strong>
                   <br />
-                  고용 규모 {workerRank ?? "-"}위 · 평균연소득{" "}
-                  {incomeRank ?? "-"}위
+                  고용 규모: {workerRankMap.get(item.sido_code) ?? "-"}위
                   <br />
-                  가입자 {formatNumber(item.total_workers)}명
+                  사업장 수: {businessRankMap.get(item.sido_code) ?? "-"}위
                   <br />
-                  평균연소득{" "}
+                  평균연소득: {incomeRankMap.get(item.sido_code) ?? "-"}위
+                  <br />
+                  평균 사업장 규모:{" "}
+                  {avgWorkersRankMap.get(item.sido_code) ?? "-"}위
+                  <hr style={{ border: 0, borderTop: "1px solid #e5e7eb" }} />
+                  가입자 수: {formatNumber(item.total_workers)}명
+                  <br />
+                  사업장 수: {formatNumber(item.business_count)}개
+                  <br />
+                  사업장당 평균 가입자 수: {formatNumber(item.avg_workers)}명
+                  <br />
+                  추정 평균연소득:{" "}
                   {formatIncomeManwon(item.estimated_avg_annual_income)}
+                  <br />
+                  <span style={{ color: "#0f766e", fontWeight: 800 }}>
+                    클릭하면 지역 탐색으로 이동
+                  </span>
                 </div>
               </Tooltip>
-
-              <Popup>
-                <div style={{ minWidth: "190px", lineHeight: 1.7 }}>
-                  <div
-                    style={{
-                      fontWeight: 800,
-                      fontSize: "15px",
-                      marginBottom: "6px",
-                    }}
-                  >
-                    {item.sido_name}
-                  </div>
-
-                  <div>고용 규모 순위: {workerRank ?? "-"}위</div>
-                  <div>평균연소득 순위: {incomeRank ?? "-"}위</div>
-                  <hr style={{ border: 0, borderTop: "1px solid #e5e7eb" }} />
-                  <div>가입자 수: {formatNumber(item.total_workers)}명</div>
-                  <div>사업장 수: {formatNumber(item.business_count)}개</div>
-                  <div>
-                    사업장당 평균 가입자 수: {formatNumber(item.avg_workers)}명
-                  </div>
-                  <div>
-                    추정 평균연소득:{" "}
-                    {formatIncomeManwon(item.estimated_avg_annual_income)}
-                  </div>
-                </div>
-              </Popup>
             </CircleMarker>
           );
         })}
@@ -179,13 +175,7 @@ export default function NationwideEmploymentMap({
           minWidth: "150px",
         }}
       >
-        <div
-          style={{
-            fontWeight: 800,
-            marginBottom: "8px",
-            color: "#0f172a",
-          }}
-        >
+        <div style={{ fontWeight: 800, marginBottom: "8px", color: "#0f172a" }}>
           평균연봉 범례
         </div>
 

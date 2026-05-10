@@ -7,6 +7,14 @@ type ActiveTab = "overview" | "region" | "industry";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("region");
+  const [selectedSidoCode, setSelectedSidoCode] = useState("26");
+  const [shouldAutoLoadRegion, setShouldAutoLoadRegion] = useState(false);
+
+  function handleSelectSidoFromOverview(sidoCode: string) {
+    setSelectedSidoCode(sidoCode);
+    setShouldAutoLoadRegion(true);
+    setActiveTab("region");
+  }
 
   return (
     <div
@@ -77,8 +85,18 @@ export default function App() {
           </nav>
         </header>
 
-        {activeTab === "overview" && <NationwideDashboard />}
-        {activeTab === "region" && <BusanDashboard />}
+        {activeTab === "overview" && (
+          <NationwideDashboard onSelectSido={handleSelectSidoFromOverview} />
+        )}
+
+        {activeTab === "region" && (
+          <BusanDashboard
+            initialSidoCode={selectedSidoCode}
+            shouldAutoLoad={shouldAutoLoadRegion}
+            onAutoLoadDone={() => setShouldAutoLoadRegion(false)}
+          />
+        )}
+
         {activeTab === "industry" && <IndustryDashboard />}
 
         <DashboardFooter />
