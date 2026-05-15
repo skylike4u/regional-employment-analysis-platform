@@ -543,26 +543,34 @@ export default function BusanDashboard({
           onClick={handleSearch}
           disabled={loading}
           style={{
-            padding: "10px 16px",
+            padding: "10px 18px",
             borderRadius: "10px",
             border: "1px solid #0f766e",
             background: loading ? "#94a3b8" : "#0f766e",
             color: "#ffffff",
             cursor: loading ? "not-allowed" : "pointer",
-            fontWeight: 700,
+            fontWeight: 800,
             height: "42px",
+            minWidth: "96px",
+            boxShadow: loading ? "none" : "0 4px 10px rgba(15, 118, 110, 0.24)",
           }}
         >
           {loading ? "조회 중..." : "분석 조회"}
         </button>
       </section>
 
-      {!hasSearched && !loading && (
+      {!data && !loading && !errorMessage && (
         <section style={emptyBox}>
-          <strong>{selectedRegionName}</strong>이 선택되어 있습니다.
-          <br />
-          분석 조회 버튼을 누르면 시군구·법정동·업종·대표 기업 분석이
-          표시됩니다.
+          <div style={emptyTitle}>
+            {currentScopeLabel || selectedRegionName} 분석 대기 중
+          </div>
+          <div style={emptyText}>
+            분석 조회 버튼을 누르면 선택한 범위의 사업장 수, 가입자 수, 업종
+            구조, 대표 기업, 추정 평균연소득이 표시됩니다.
+          </div>
+          <div style={emptyHint}>
+            조회 범위: 시도 → 시군구 → 법정동 → 업종 순으로 좁혀볼 수 있습니다.
+          </div>
         </section>
       )}
 
@@ -578,6 +586,21 @@ export default function BusanDashboard({
 
       {!loading && !errorMessage && data && (
         <>
+          <section style={resultSummaryBox}>
+            <div>
+              <div style={resultSummaryLabel}>현재 조회 범위</div>
+              <div style={resultSummaryTitle}>
+                {currentScopeLabel || data.sido_name}
+              </div>
+            </div>
+
+            <div style={resultSummaryMeta}>
+              <span>사업장 {formatNumber(totalBusinesses)}개</span>
+              <span>가입자 {formatNumber(totalWorkers)}명</span>
+              <span>추정 평균연소득 {formatIncomeManwon(scopeAvgIncome)}</span>
+            </div>
+          </section>
+
           <section style={isLegalDongScope ? grid4 : grid5}>
             <InfoCard
               label="분석 지역"
@@ -727,21 +750,26 @@ export default function BusanDashboard({
                 value={`${top3LegalDongWorkerShare.toFixed(1)}%`}
                 subText="동 단위 집중도"
               />
-              <InfoCard label="정책 해석 축" value="지역 × 동 × 업종 × 기업" />
+              <InfoCard
+                label="분석 활용 방향"
+                value={isSigunguScope ? "동별 거점 파악" : "지역별 집중도 비교"}
+                subText={isSigunguScope ? "법정동 단위" : "시군구 단위"}
+              />
             </section>
           )}
 
           <section style={grid2}>
             <div style={cardStyle}>
               <div style={labelStyle}>해석 포인트</div>
-              <div style={{ color: "#334155", lineHeight: 1.6 }}>
+              <div style={{ color: "#334155", lineHeight: 1.65 }}>
                 시군구는 큰 고용권역을, 법정동은 실제 고용 클러스터를, 업종은
                 산업구조를, 대표 기업은 고용을 만드는 핵심 사업장을 보여줍니다.
               </div>
             </div>
+
             <div style={cardStyle}>
               <div style={labelStyle}>정책 활용 포인트</div>
-              <div style={{ color: "#334155", lineHeight: 1.6 }}>
+              <div style={{ color: "#334155", lineHeight: 1.65 }}>
                 법정동 단위 분석은 문현동, 우동, 장안읍처럼 실제 정책 현장과
                 가까운 산업·고용 거점을 찾는 데 활용할 수 있습니다.
               </div>
@@ -859,18 +887,28 @@ export default function BusanDashboard({
                   {data.legal_dong_top10?.map((item, index) => (
                     <tr key={item.legal_dong_code}>
                       <td style={tdStyle}>{index + 1}</td>
-                      <td style={tdStyle}>{item.legal_dong_name}</td>
-                      <td style={tdStyle}>{item.legal_dong_full_name}</td>
-                      <td style={tdStyleRight}>
+
+                      <td style={companyNameCell} title={item.legal_dong_name}>
+                        {item.legal_dong_name}
+                      </td>
+
+                      <td style={mutedCell} title={item.legal_dong_full_name}>
+                        {shortText(item.legal_dong_full_name, 34)}
+                      </td>
+
+                      <td style={strongNumberCell}>
                         {formatNumber(item.business_count)}
                       </td>
-                      <td style={tdStyleRight}>
+
+                      <td style={strongNumberCell}>
                         {formatNumber(item.total_workers)}
                       </td>
+
                       <td style={tdStyleRight}>
                         {formatNumber(item.avg_workers)}
                       </td>
-                      <td style={tdStyleRight}>
+
+                      <td style={strongNumberCell}>
                         {formatIncomeManwon(item.estimated_avg_annual_income)}
                       </td>
                     </tr>
@@ -901,17 +939,24 @@ export default function BusanDashboard({
                     key={`${item.company_name}-${item.business_number}-${index}`}
                   >
                     <td style={tdStyle}>{index + 1}</td>
-                    <td style={tdStyle}>{item.company_name}</td>
-                    <td style={tdStyle} title={item.industry_name}>
-                      {shortText(item.industry_name, 22)}
+
+                    <td style={companyNameCell} title={item.company_name}>
+                      {shortText(item.company_name, 26)}
                     </td>
-                    <td style={tdStyle} title={item.full_address}>
-                      {shortText(item.full_address, 28)}
+
+                    <td style={mutedCell} title={item.industry_name}>
+                      {shortText(item.industry_name, 24)}
                     </td>
-                    <td style={tdStyleRight}>
+
+                    <td style={mutedCell} title={item.full_address}>
+                      {shortText(item.full_address, 36)}
+                    </td>
+
+                    <td style={strongNumberCell}>
                       {formatNumber(item.subscriber_count)}
                     </td>
-                    <td style={tdStyleRight}>
+
+                    <td style={strongNumberCell}>
                       {formatIncomeManwon(item.estimated_avg_annual_income)}
                     </td>
                   </tr>
@@ -935,21 +980,29 @@ export default function BusanDashboard({
                   <th style={thStyleRight}>추정 평균연소득</th>
                 </tr>
               </thead>
+
               <tbody>
                 {data.industry_top10.map((item, index) => (
                   <tr key={`${item.industry_name}-${index}`}>
                     <td style={tdStyle}>{index + 1}</td>
-                    <td style={tdStyle}>{item.industry_name}</td>
-                    <td style={tdStyleRight}>
+
+                    <td style={companyNameCell} title={item.industry_name}>
+                      {shortText(item.industry_name, 30)}
+                    </td>
+
+                    <td style={strongNumberCell}>
                       {formatNumber(item.business_count)}
                     </td>
-                    <td style={tdStyleRight}>
+
+                    <td style={strongNumberCell}>
                       {formatNumber(item.total_workers)}
                     </td>
+
                     <td style={tdStyleRight}>
                       {formatNumber(item.avg_workers)}
                     </td>
-                    <td style={tdStyleRight}>
+
+                    <td style={strongNumberCell}>
                       {formatIncomeManwon(item.estimated_avg_annual_income)}
                     </td>
                   </tr>
@@ -1064,13 +1117,13 @@ const pageSubtitle: React.CSSProperties = {
 
 const filterBox: React.CSSProperties = {
   marginBottom: "20px",
-  padding: "16px",
-  border: "1px solid #e5e7eb",
-  borderRadius: "14px",
+  padding: "18px",
+  border: "1px solid #e2e8f0",
+  borderRadius: "16px",
   background: "#ffffff",
-  boxShadow: "0 4px 14px rgba(15, 23, 42, 0.06)",
+  boxShadow: "0 6px 18px rgba(15, 23, 42, 0.06)",
   display: "flex",
-  gap: "12px",
+  gap: "14px",
   alignItems: "end",
   flexWrap: "wrap",
 };
@@ -1078,16 +1131,16 @@ const filterBox: React.CSSProperties = {
 const filterGrid: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-  gap: "12px",
+  gap: "14px",
   flex: 1,
-  minWidth: 0,
+  minWidth: "720px",
 };
 
 const emptyBox: React.CSSProperties = {
   padding: "28px",
   border: "1px dashed #cbd5e1",
-  borderRadius: "14px",
-  background: "#ffffff",
+  borderRadius: "16px",
+  background: "#f8fafc",
   color: "#475569",
   textAlign: "center",
   marginBottom: "20px",
@@ -1098,88 +1151,106 @@ const selectStyle: React.CSSProperties = {
   padding: "10px 12px",
   borderRadius: "10px",
   border: "1px solid #cbd5e1",
-  fontSize: "15px",
+  fontSize: "14px",
   background: "#ffffff",
+  color: "#0f172a",
+  height: "42px",
 };
 
 const grid5: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
-  gap: "16px",
-  marginBottom: "20px",
+  gap: "14px",
+  marginBottom: "18px",
 };
 
 const grid4: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-  gap: "16px",
-  marginBottom: "20px",
+  gap: "14px",
+  marginBottom: "18px",
 };
 
 const grid2: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-  gap: "20px",
-  marginBottom: "20px",
+  gap: "18px",
+  marginBottom: "18px",
 };
 
 const grid1: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "1fr",
-  gap: "20px",
-  marginBottom: "20px",
+  gap: "18px",
+  marginBottom: "18px",
 };
 
 const cardStyle: React.CSSProperties = {
-  padding: "20px",
-  border: "1px solid #e5e7eb",
-  borderRadius: "14px",
+  padding: "18px 20px",
+  border: "1px solid #e2e8f0",
+  borderRadius: "16px",
   background: "#ffffff",
-  boxShadow: "0 4px 14px rgba(15, 23, 42, 0.06)",
+  boxShadow: "0 6px 18px rgba(15, 23, 42, 0.06)",
+  minHeight: "88px",
+  boxSizing: "border-box",
 };
 
 const tableCard: React.CSSProperties = {
   ...cardStyle,
   overflowX: "auto",
-  marginBottom: "20px",
+  marginBottom: "22px",
+  padding: "22px 24px",
+  maxWidth: "100%",
 };
 
 const sectionTitle: React.CSSProperties = {
   marginTop: 0,
-  marginBottom: "16px",
+  marginBottom: "18px",
+  fontSize: "20px",
+  fontWeight: 900,
+  color: "#0f172a",
+  letterSpacing: "-0.03em",
 };
-
 const labelStyle: React.CSSProperties = {
   display: "block",
-  fontSize: "14px",
-  color: "#6b7280",
-  marginBottom: "10px",
-  fontWeight: 700,
+  fontSize: "13px",
+  color: "#64748b",
+  marginBottom: "8px",
+  fontWeight: 800,
+  letterSpacing: "-0.01em",
 };
 
 const valueStyleSmall: React.CSSProperties = {
-  fontSize: "20px",
-  fontWeight: 800,
-  color: "#111827",
-  lineHeight: 1.4,
+  fontSize: "21px",
+  fontWeight: 900,
+  color: "#0f172a",
+  lineHeight: 1.35,
+  letterSpacing: "-0.03em",
+  wordBreak: "keep-all",
 };
 
 const subTextStyle: React.CSSProperties = {
   marginTop: "8px",
   color: "#64748b",
-  fontSize: "14px",
+  fontSize: "13px",
+  lineHeight: 1.4,
 };
 
 const tableStyle: React.CSSProperties = {
   width: "100%",
   borderCollapse: "collapse",
+  fontSize: "14px",
 };
 
 const thStyle: React.CSSProperties = {
   textAlign: "left",
-  padding: "12px 8px",
-  borderBottom: "1px solid #e5e7eb",
+  padding: "13px 10px",
+  borderBottom: "1px solid #cbd5e1",
   whiteSpace: "nowrap",
+  color: "#475569",
+  fontSize: "13px",
+  fontWeight: 800,
+  background: "#f8fafc",
 };
 
 const thStyleRight: React.CSSProperties = {
@@ -1188,12 +1259,88 @@ const thStyleRight: React.CSSProperties = {
 };
 
 const tdStyle: React.CSSProperties = {
-  padding: "12px 8px",
-  borderBottom: "1px solid #f1f5f9",
+  padding: "12px 10px",
+  borderBottom: "1px solid #eef2f7",
   whiteSpace: "nowrap",
+  color: "#0f172a",
+  fontSize: "14px",
 };
 
 const tdStyleRight: React.CSSProperties = {
   ...tdStyle,
   textAlign: "right",
+  fontVariantNumeric: "tabular-nums",
+};
+
+const emptyTitle: React.CSSProperties = {
+  fontSize: "18px",
+  fontWeight: 800,
+  color: "#0f172a",
+  marginBottom: "8px",
+};
+
+const emptyText: React.CSSProperties = {
+  fontSize: "14px",
+  color: "#475569",
+  lineHeight: 1.6,
+};
+
+const emptyHint: React.CSSProperties = {
+  marginTop: "10px",
+  fontSize: "13px",
+  color: "#64748b",
+};
+
+const resultSummaryBox: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: "16px",
+  padding: "16px 20px",
+  borderRadius: "16px",
+  border: "1px solid #dbeafe",
+  background: "#eff6ff",
+  marginBottom: "16px",
+};
+
+const resultSummaryLabel: React.CSSProperties = {
+  fontSize: "13px",
+  color: "#2563eb",
+  fontWeight: 800,
+  marginBottom: "4px",
+};
+
+const resultSummaryTitle: React.CSSProperties = {
+  fontSize: "20px",
+  fontWeight: 900,
+  color: "#0f172a",
+  letterSpacing: "-0.03em",
+};
+
+const resultSummaryMeta: React.CSSProperties = {
+  display: "flex",
+  gap: "10px",
+  flexWrap: "wrap",
+  justifyContent: "flex-end",
+  color: "#334155",
+  fontSize: "13px",
+  fontWeight: 700,
+};
+
+const companyNameCell: React.CSSProperties = {
+  ...tdStyle,
+  fontWeight: 800,
+  color: "#0f172a",
+  minWidth: "180px",
+};
+
+const mutedCell: React.CSSProperties = {
+  ...tdStyle,
+  color: "#475569",
+};
+
+const strongNumberCell: React.CSSProperties = {
+  ...tdStyleRight,
+  fontWeight: 800,
+  color: "#0f172a",
 };
