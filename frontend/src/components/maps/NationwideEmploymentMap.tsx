@@ -96,6 +96,8 @@ export default function NationwideEmploymentMap({
         overflow: "hidden",
         border: "1px solid #e5e7eb",
         position: "relative",
+        zIndex: 1,
+        marginBottom: "24px",
       }}
     >
       <MapContainer
@@ -127,7 +129,13 @@ export default function NationwideEmploymentMap({
                 click: () => onSelectSido(item.sido_code),
               }}
             >
-              <Tooltip direction="top" offset={[0, -8]} opacity={0.96}>
+              <Tooltip
+                direction="bottom"
+                offset={[0, 12]}
+                opacity={1}
+                sticky
+                className="employment-map-tooltip"
+              >
                 <div style={{ minWidth: "210px", lineHeight: 1.65 }}>
                   <strong style={{ fontSize: "15px" }}>{item.sido_name}</strong>
                   <br />

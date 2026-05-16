@@ -128,6 +128,38 @@ export default function IndustryDashboard() {
     )[0];
   }, [data]);
 
+  const topBusinessIndustry = useMemo(() => {
+    if (!data || data.industry_summary.length === 0) return null;
+
+    return [...data.industry_summary].sort(
+      (a, b) => b.business_count - a.business_count
+    )[0];
+  }, [data]);
+
+  const top3BusinessShare = useMemo(() => {
+    if (!data || totalBusinessesAll === 0) return 0;
+
+    const top3Businesses = [...data.industry_summary]
+      .sort((a, b) => b.business_count - a.business_count)
+      .slice(0, 3)
+      .reduce((sum, item) => sum + item.business_count, 0);
+
+    return (top3Businesses / totalBusinessesAll) * 100;
+  }, [data, totalBusinessesAll]);
+
+  const industryStructureType = useMemo(() => {
+    if (!data || data.industry_summary.length === 0) return "-";
+
+    if (top3IndustryShare >= 60) return "특정 업종 집중형";
+    if ((highestDensityIndustry?.avg_workers ?? 0) >= 100) {
+      return "대형사업장 중심형";
+    }
+    if (top3BusinessShare >= 50 && top3IndustryShare < 40) {
+      return "소규모 분산형";
+    }
+    return "복합 산업 구조";
+  }, [data, top3IndustryShare, top3BusinessShare, highestDensityIndustry]);
+
   const workerChartData = useMemo(() => {
     if (!data) return [];
 
@@ -283,6 +315,19 @@ export default function IndustryDashboard() {
 
       {!loading && !errorMessage && data && (
         <>
+          <section style={resultSummaryBox}>
+            <div>
+              <div style={resultSummaryLabel}>현재 조회 범위</div>
+              <div style={resultSummaryTitle}>{data.sido_name}</div>
+            </div>
+
+            <div style={resultSummaryMeta}>
+              <span>사업장 {formatNumber(totalBusinessesAll)}개</span>
+              <span>가입자 {formatNumber(totalWorkersAll)}명</span>
+              <span>업종 {formatNumber(data.industry_summary.length)}개</span>
+            </div>
+          </section>
+
           {data.is_low_sample && (
             <section
               style={{
@@ -301,73 +346,67 @@ export default function IndustryDashboard() {
             </section>
           )}
 
-          <section
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
-              gap: "16px",
-              marginBottom: "24px",
-            }}
-          >
-            <div style={cardStyle}>
-              <div style={labelStyle}>분석 지역</div>
-              <div style={valueStyle}>{data.sido_name}</div>
-            </div>
-            <div style={cardStyle}>
-              <div style={labelStyle}>업종 집중도</div>
-              <div style={valueStyle}>{concentrationLevel}</div>
-            </div>
-            <div style={cardStyle}>
-              <div style={labelStyle}>가입자 수 1위 업종</div>
-              <div style={valueStyleSmall}>{topIndustryName}</div>
-            </div>
-            <div style={cardStyle}>
-              <div style={labelStyle}>1위 업종 총 가입자 수</div>
-              <div style={valueStyle}>{formatNumber(topIndustryWorkers)}</div>
-            </div>
-            <div style={cardStyle}>
-              <div style={labelStyle}>집계 업종 수</div>
-              <div style={valueStyle}>
-                {formatNumber(data.industry_summary.length)}
-              </div>
-            </div>
+          <section style={grid5}>
+            <InfoCard label="분석 지역" value={data.sido_name} />
+
+            <InfoCard
+              label="주력 고용 업종"
+              value={topIndustryName}
+              subText={`${formatNumber(topIndustryWorkers)}명`}
+            />
+
+            <InfoCard
+              label="사업장 수 1위 업종"
+              value={topBusinessIndustry?.industry_name ?? "-"}
+              subText={
+                topBusinessIndustry
+                  ? `${formatNumber(topBusinessIndustry.business_count)}개`
+                  : "-"
+              }
+            />
+
+            <InfoCard
+              label="고용 밀도 1위 업종"
+              value={highestDensityIndustry?.industry_name ?? "-"}
+              subText={
+                highestDensityIndustry
+                  ? `사업장당 ${formatNumber(
+                      highestDensityIndustry.avg_workers
+                    )}명`
+                  : "-"
+              }
+            />
+
+            <InfoCard
+              label="집계 업종 수"
+              value={formatNumber(data.industry_summary.length)}
+            />
           </section>
 
-          <section
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-              gap: "16px",
-              marginBottom: "24px",
-            }}
-          >
-            <div style={cardStyle}>
-              <div style={labelStyle}>상위 1개 업종 비중</div>
-              <div style={valueStyle}>{top1IndustryShare.toFixed(1)}%</div>
-            </div>
+          <section style={grid4}>
+            <InfoCard
+              label="상위 1개 업종 가입자 비중"
+              value={`${top1IndustryShare.toFixed(1)}%`}
+              subText="주력 업종 의존도"
+            />
 
-            <div style={cardStyle}>
-              <div style={labelStyle}>상위 3개 업종 비중</div>
-              <div style={valueStyle}>{top3IndustryShare.toFixed(1)}%</div>
-            </div>
+            <InfoCard
+              label="상위 3개 업종 가입자 비중"
+              value={`${top3IndustryShare.toFixed(1)}%`}
+              subText="산업 집중도"
+            />
 
-            <div style={cardStyle}>
-              <div style={labelStyle}>상위 5개 업종 비중</div>
-              <div style={valueStyle}>{top5IndustryShare.toFixed(1)}%</div>
-            </div>
+            <InfoCard
+              label="상위 3개 업종 사업장 비중"
+              value={`${top3BusinessShare.toFixed(1)}%`}
+              subText="사업장 분포"
+            />
 
-            <div style={cardStyle}>
-              <div style={labelStyle}>고용 밀도 1위 업종</div>
-              <div style={valueStyleSmall}>
-                {highestDensityIndustry?.industry_name ?? "-"}
-              </div>
-              <div style={{ marginTop: "8px", color: "#64748b" }}>
-                사업장당 평균 가입자 수{" "}
-                {highestDensityIndustry
-                  ? formatNumber(highestDensityIndustry.avg_workers)
-                  : "-"}
-              </div>
-            </div>
+            <InfoCard
+              label="산업 구조 유형"
+              value={industryStructureType}
+              subText={concentrationLevel}
+            />
           </section>
 
           <section
@@ -500,18 +539,97 @@ export default function IndustryDashboard() {
   );
 }
 
+function InfoCard({
+  label,
+  value,
+  subText,
+}: {
+  label: string;
+  value: string | number;
+  subText?: string;
+}) {
+  return (
+    <div style={cardStyle}>
+      <div style={labelStyle}>{label}</div>
+      <div style={valueStyleSmall}>{value}</div>
+      {subText && <div style={subTextStyle}>{subText}</div>}
+    </div>
+  );
+}
+
+const resultSummaryBox: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: "16px",
+  padding: "16px 20px",
+  borderRadius: "16px",
+  border: "1px solid #fed7aa",
+  background: "#fff7ed",
+  marginBottom: "16px",
+};
+
+const resultSummaryLabel: React.CSSProperties = {
+  fontSize: "13px",
+  color: "#ea580c",
+  fontWeight: 800,
+  marginBottom: "4px",
+};
+
+const resultSummaryTitle: React.CSSProperties = {
+  fontSize: "20px",
+  fontWeight: 900,
+  color: "#0f172a",
+  letterSpacing: "-0.03em",
+};
+
+const resultSummaryMeta: React.CSSProperties = {
+  display: "flex",
+  gap: "10px",
+  flexWrap: "wrap",
+  justifyContent: "flex-end",
+  color: "#334155",
+  fontSize: "13px",
+  fontWeight: 700,
+};
+
+const grid5: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+  gap: "14px",
+  marginBottom: "18px",
+};
+
+const grid4: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+  gap: "14px",
+  marginBottom: "18px",
+};
+
+const subTextStyle: React.CSSProperties = {
+  marginTop: "8px",
+  color: "#64748b",
+  fontSize: "13px",
+  lineHeight: 1.4,
+};
+
 const cardStyle: React.CSSProperties = {
-  padding: "20px",
-  border: "1px solid #e5e7eb",
-  borderRadius: "14px",
+  padding: "18px 20px",
+  border: "1px solid #e2e8f0",
+  borderRadius: "16px",
   background: "#ffffff",
-  boxShadow: "0 4px 14px rgba(15, 23, 42, 0.06)",
+  boxShadow: "0 6px 18px rgba(15, 23, 42, 0.06)",
+  minHeight: "96px",
+  boxSizing: "border-box",
 };
 
 const labelStyle: React.CSSProperties = {
-  fontSize: "14px",
-  color: "#6b7280",
-  marginBottom: "10px",
+  fontSize: "13px",
+  color: "#64748b",
+  marginBottom: "8px",
+  fontWeight: 800,
+  letterSpacing: "-0.01em",
 };
 
 const valueStyle: React.CSSProperties = {
@@ -521,10 +639,12 @@ const valueStyle: React.CSSProperties = {
 };
 
 const valueStyleSmall: React.CSSProperties = {
-  fontSize: "18px",
-  fontWeight: 700,
-  color: "#111827",
-  lineHeight: 1.4,
+  fontSize: "20px",
+  fontWeight: 900,
+  color: "#0f172a",
+  lineHeight: 1.35,
+  letterSpacing: "-0.03em",
+  wordBreak: "keep-all",
 };
 
 const thStyle: React.CSSProperties = {

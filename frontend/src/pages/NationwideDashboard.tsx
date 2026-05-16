@@ -262,7 +262,7 @@ export default function NationwideDashboard({
             />
           </section>
 
-          <section style={cardStyle}>
+          <section style={mapCardStyle}>
             <div
               style={{
                 display: "flex",
@@ -618,4 +618,12 @@ const tdStyle: React.CSSProperties = {
 const tdStyleRight: React.CSSProperties = {
   ...tdStyle,
   textAlign: "right",
+};
+
+const mapCardStyle: React.CSSProperties = {
+  ...cardStyle,
+  position: "relative",
+  zIndex: 1,
+  overflow: "visible",
+  marginBottom: "28px",
 };
