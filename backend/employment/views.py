@@ -800,11 +800,32 @@ def build_industry_options(df: pd.DataFrame):
     if df.empty or "industry_name" not in df.columns:
         return []
 
+    excluded_industry_names = {
+        "",
+        "해당없음",
+        "BIZ_NO미존재사업장",
+    }
+
+    excluded_industry_codes = {
+        "999999",
+    }
+
     temp_df = df.copy()
+
     temp_df["industry_name"] = (
         temp_df["industry_name"].fillna("").astype(str).str.strip()
     )
-    temp_df = temp_df[temp_df["industry_name"] != ""]
+
+    temp_df = temp_df[~temp_df["industry_name"].isin(excluded_industry_names)]
+
+    if "industry_code" in temp_df.columns:
+        temp_df["industry_code"] = (
+            temp_df["industry_code"].fillna("").astype(str).str.strip()
+        )
+        temp_df = temp_df[~temp_df["industry_code"].isin(excluded_industry_codes)]
+
+    if temp_df.empty:
+        return []
 
     grouped = (
         temp_df.groupby("industry_name")
@@ -1711,6 +1732,288 @@ class NationwideSummaryRealView(APIView):
                     "error_type": type(e).__name__,
                 },
                 status=500,
+            )
+
+
+def filter_by_industry_name(df: pd.DataFrame, industry_name: str) -> pd.DataFrame:
+    if df.empty or "industry_name" not in df.columns:
+        return pd.DataFrame()
+
+    industry_name = str(industry_name or "").strip()
+
+    if not industry_name or industry_name == "all":
+        return pd.DataFrame()
+
+    working_df = df.copy()
+    working_df["industry_name"] = (
+        working_df["industry_name"].fillna("").astype(str).str.strip()
+    )
+
+    return working_df[working_df["industry_name"] == industry_name].copy()
+
+
+def build_industry_distribution_map_points(
+    df: pd.DataFrame,
+    scope: str,
+    sido_code: str = "",
+):
+    if df.empty:
+        return []
+
+    region_codes = load_region_code_map()
+    sido_centroids = load_sido_centroid_map()
+
+    base_month = (
+        df["base_month"].iloc[0] if "base_month" in df.columns and len(df) > 0 else ""
+    )
+
+    rate_info = get_pension_rate_by_base_month(base_month)
+    total_pension_rate = rate_info.get("total_rate", 0)
+
+    temp_df = df.copy()
+
+    temp_df["sido_code"] = (
+        temp_df["sido_code"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .str.replace(".0", "", regex=False)
+    )
+
+    if "sigungu_code" in temp_df.columns:
+        temp_df["sigungu_code"] = (
+            temp_df["sigungu_code"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+            .str.replace(".0", "", regex=False)
+        )
+
+    results = []
+
+    # 1) 전국 단위: 시도별 집계 + 시도 centroid
+    if scope == "nationwide":
+        grouped = (
+            temp_df.groupby("sido_code", dropna=False)
+            .agg(
+                business_count=("business_number", "count"),
+                total_workers=("subscriber_count", "sum"),
+                avg_workers=("subscriber_count", "mean"),
+                total_monthly_pension_amount=("monthly_pension_amount", "sum"),
+            )
+            .reset_index()
+        )
+
+        sido_map = region_codes.get("sido", {})
+
+        for _, row in grouped.iterrows():
+            row_sido_code = str(row["sido_code"]).strip()
+            sido_name = sido_map.get(row_sido_code, row_sido_code)
+            centroid = sido_centroids.get(row_sido_code, {})
+
+            total_workers = int(row["total_workers"])
+
+            estimated_avg_annual_income = calculate_estimated_avg_annual_income(
+                row["total_monthly_pension_amount"],
+                total_workers,
+                total_pension_rate,
+            )
+
+            results.append(
+                {
+                    "region_code": row_sido_code,
+                    "region_name": sido_name,
+                    "sido_code": row_sido_code,
+                    "sido_name": sido_name,
+                    "sigungu_code": "",
+                    "sigungu_name": "",
+                    "business_count": int(row["business_count"]),
+                    "total_workers": total_workers,
+                    "avg_workers": round(float(row["avg_workers"]), 1),
+                    "estimated_avg_annual_income": estimated_avg_annual_income,
+                    "applied_pension_rate": total_pension_rate,
+                    "lat": centroid.get("lat"),
+                    "lng": centroid.get("lng"),
+                }
+            )
+
+    # 2) 시도 단위: 시군구별 집계
+    else:
+        scoped_df = filter_by_sido(temp_df, sido_code)
+
+        if scoped_df.empty:
+            return []
+
+        grouped = (
+            scoped_df.groupby(["sido_code", "sigungu_code"], dropna=False)
+            .agg(
+                business_count=("business_number", "count"),
+                total_workers=("subscriber_count", "sum"),
+                avg_workers=("subscriber_count", "mean"),
+                total_monthly_pension_amount=("monthly_pension_amount", "sum"),
+            )
+            .reset_index()
+        )
+
+        for _, row in grouped.iterrows():
+            row_sido_code = clean_region_code(row["sido_code"])
+            row_sigungu_code = clean_region_code(row["sigungu_code"], length=3)
+
+            region_names = get_region_names(row_sido_code, row_sigungu_code)
+
+            total_workers = int(row["total_workers"])
+
+            estimated_avg_annual_income = calculate_estimated_avg_annual_income(
+                row["total_monthly_pension_amount"],
+                total_workers,
+                total_pension_rate,
+            )
+
+            full_sigungu_code = f"{row_sido_code}{row_sigungu_code}"
+
+            results.append(
+                {
+                    "region_code": full_sigungu_code,
+                    "region_name": region_names.get("full_region_name")
+                    or full_sigungu_code,
+                    "sido_code": row_sido_code,
+                    "sido_name": region_names.get("sido_name", ""),
+                    "sigungu_code": full_sigungu_code,
+                    "sigungu_name": region_names.get("sigungu_name", ""),
+                    "business_count": int(row["business_count"]),
+                    "total_workers": total_workers,
+                    "avg_workers": round(float(row["avg_workers"]), 1),
+                    "estimated_avg_annual_income": estimated_avg_annual_income,
+                    "applied_pension_rate": total_pension_rate,
+                    # 시군구 centroid 파일이 아직 없으므로 우선 null 처리
+                    "lat": None,
+                    "lng": None,
+                }
+            )
+
+    results.sort(key=lambda item: item["total_workers"], reverse=True)
+
+    return results
+
+
+def build_industry_distribution_region_top20(
+    df: pd.DataFrame,
+    scope: str,
+    sido_code: str = "",
+):
+    if df.empty:
+        return []
+
+    if scope == "nationwide":
+        # 전국 조회에서는 시군구 단위 TOP20을 보여줌
+        return build_region_summary(df)[:20]
+
+    # 시도 조회에서는 해당 시도 내부 시군구 TOP20을 보여줌
+    scoped_df = filter_by_sido(df, sido_code)
+    return build_region_summary(scoped_df)[:20]
+
+
+class IndustryDistributionRealView(APIView):
+    def get(self, request):
+        try:
+            scope = request.GET.get("scope", "nationwide").strip()
+            sido_code = request.GET.get("sido_code", "").strip()
+            industry_name = request.GET.get("industry_name", "").strip()
+
+            if scope not in ["nationwide", "sido"]:
+                return Response(
+                    {
+                        "error": "scope 값은 nationwide 또는 sido 여야 합니다.",
+                        "error_type": "ValidationError",
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            if scope == "sido" and not sido_code:
+                return Response(
+                    {
+                        "error": "scope=sido 인 경우 sido_code 파라미터가 필요합니다.",
+                        "error_type": "ValidationError",
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            df, used_encoding = read_pension_file_from_disk(PENSION_SAMPLE_FILE)
+            normalized_df = normalize_pension_dataframe(df)
+
+            region_codes = load_region_code_map()
+            sido_name = region_codes.get("sido", {}).get(str(sido_code), "")
+
+            # 업종 선택 목록은 전체 데이터 기준으로 제공
+            industry_options = build_industry_options(normalized_df)
+
+            # industry_name이 없으면 가장 가입자 수가 많은 업종을 기본값으로 사용
+            if not industry_name or industry_name == "all":
+                industry_name = (
+                    industry_options[0]["name"] if len(industry_options) > 0 else ""
+                )
+
+            industry_df = filter_by_industry_name(normalized_df, industry_name)
+
+            if scope == "sido":
+                scoped_industry_df = filter_by_sido(industry_df, sido_code)
+            else:
+                scoped_industry_df = industry_df
+
+            summary = build_scope_summary(scoped_industry_df)
+
+            map_points = build_industry_distribution_map_points(
+                industry_df,
+                scope=scope,
+                sido_code=sido_code,
+            )
+
+            region_top20 = build_industry_distribution_region_top20(
+                industry_df,
+                scope=scope,
+                sido_code=sido_code,
+            )
+
+            company_top20 = build_company_top_by_sido(
+                scoped_industry_df,
+                top_n=20,
+                min_subscribers=10,
+            )
+
+            top_region = region_top20[0] if len(region_top20) > 0 else None
+
+            return Response(
+                {
+                    "message": "업종 분포 데이터 조회 성공",
+                    "encoding": used_encoding,
+                    "scope": scope,
+                    "sido_code": sido_code if scope == "sido" else None,
+                    "sido_name": sido_name if scope == "sido" else None,
+                    "industry_name": industry_name,
+                    "row_count": int(len(scoped_industry_df)),
+                    "summary": summary,
+                    "top_region": top_region,
+                    "industry_options": industry_options,
+                    "map_points": map_points,
+                    "region_top20": region_top20,
+                    "company_top20": company_top20,
+                    "source_file": str(PENSION_SAMPLE_FILE.name),
+                    "notes": {
+                        "nationwide_scope": "전국 단위는 시도별 지도 포인트와 전국 시군구 TOP20을 제공합니다.",
+                        "sido_scope": "시도 단위는 시군구별 집계를 제공합니다. 시군구 지도 좌표는 별도 centroid 데이터 추가 후 지도화할 수 있습니다.",
+                    },
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        except Exception as e:
+            traceback.print_exc()
+            return Response(
+                {
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
 
