@@ -332,11 +332,13 @@ export default function IndustryDashboard() {
               </div>
             </div>
           </section>
-          <IndustryDistributionMap
-            data={data.map_points}
-            industryName={data.industry_name}
-            scope={data.scope}
-          />
+          {data.scope === "nationwide" && (
+            <IndustryDistributionMap
+              data={data.map_points}
+              industryName={data.industry_name}
+              scope={data.scope}
+            />
+          )}
 
           <section style={tableCard}>
             <h2 style={sectionTitle}>
@@ -417,6 +419,16 @@ export default function IndustryDashboard() {
               </tbody>
             </table>
           </section>
+
+          {data.scope === "sido" && (
+            <section style={mapNoticeBox}>
+              <div style={mapNoticeTitle}>지도 시각화는 준비 중입니다</div>
+              <div style={mapNoticeText}>
+                현재 시도 단위 조회는 시군구별 좌표 데이터가 없어 지도 대신 집중
+                지역 TOP20과 대표 기업 TOP20을 중심으로 제공합니다.
+              </div>
+            </section>
+          )}
         </>
       )}
     </div>
@@ -687,4 +699,27 @@ const strongNumberCell: React.CSSProperties = {
   ...tdStyleRight,
   fontWeight: 800,
   color: "#0f172a",
+};
+
+const mapNoticeBox: React.CSSProperties = {
+  padding: "22px 24px",
+  border: "1px dashed #cbd5e1",
+  borderRadius: "16px",
+  background: "#ffffff",
+  color: "#475569",
+  textAlign: "center",
+  lineHeight: 1.7,
+  marginBottom: "24px",
+};
+
+const mapNoticeTitle: React.CSSProperties = {
+  fontSize: "16px",
+  fontWeight: 900,
+  color: "#0f172a",
+  marginBottom: "6px",
+};
+
+const mapNoticeText: React.CSSProperties = {
+  fontSize: "14px",
+  color: "#475569",
 };
